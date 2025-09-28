@@ -9,7 +9,7 @@ def run_full_analysis(date_str: str, tool_context: ToolContext) -> List[Dict[str
     """
     logging.info(f"\n--- ⚙️ Herramienta Orquestadora Activada: Análisis para {date_str} ---")
     
-    # --- PASO 1: RECOLECCIÓN (ESTA ES LA PARTE QUE FALTABA) ---
+    # --- PASO 1: RECOLECCIÓN ---
     logging.info("--- fase 1: Recolectando y procesando todos los datos de entrada... ---")
     all_source_ids = data_loaders.get_all_source_ids()
     if not all_source_ids:
@@ -32,6 +32,7 @@ def run_full_analysis(date_str: str, tool_context: ToolContext) -> List[Dict[str
             continue
 
         # --- Ejecutamos los 6 detectores ---
+        
         logging.info("--- ↳ Ejecutando: Detector de Archivos Faltantes...")
         missing_incidents = detectors.find_missing_files(daily_files_df, cv_patterns, source_id, date_str)
         if missing_incidents: all_incidents.extend(missing_incidents)
@@ -52,8 +53,9 @@ def run_full_analysis(date_str: str, tool_context: ToolContext) -> List[Dict[str
         late_upload_incidents = detectors.find_late_uploads(daily_files_df, cv_patterns, source_id, date_str)
         if late_upload_incidents: all_incidents.extend(late_upload_incidents)
 
+        # --- LLAMADA CORREGIDA (HEMOS QUITADO 'cv_patterns') ---
         logging.info("--- ↳ Ejecutando: Detector de Archivos de Periodos Anteriores...")
-        previous_period_incidents = detectors.find_previous_period_uploads(daily_files_df, cv_patterns, source_id, date_str)
+        previous_period_incidents = detectors.find_previous_period_uploads(daily_files_df, source_id, date_str)
         if previous_period_incidents: all_incidents.extend(previous_period_incidents)
 
     # --- PASO 3: CONSOLIDACIÓN ---
