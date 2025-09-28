@@ -123,3 +123,102 @@ def find_unexpected_empty_files(
             
     return incidents
 
+
+def find_volume_variations(
+    daily_files_df: pd.DataFrame,
+    cv_patterns: Dict[str, Any],
+    source_id: str,
+    date_str: str
+) -> List[Dict[str, Any]]:
+    """
+    (Lógica Pura) Detecta variaciones de volumen anómalas comparando el total de filas
+    del día con los patrones estadísticos del CV para ese día de la semana.
+    """
+    incidents = []
+    
+    # 1. Obtenemos el día de la semana para buscar el patrón correcto
+    day_of_week = pd.to_datetime(date_str).day_name()
+    
+    # 2. Extraemos la tabla de resumen del CV
+    day_summary_table = cv_patterns.get("day_of_week_summary")
+    
+    if day_summary_table is None or day_summary_table.empty:
+        # Si no hay patrones de volumen en el CV, no podemos detectar nada
+        return incidents
+
+    # 3. Buscamos la fila correspondiente al día de la semana actual
+    day_stats = day_summary_table[day_summary_table['Day'].str.lower() == day_of_week.lower()]
+    if day_stats.empty:
+        return incidents
+
+    # 4. Calculamos el volumen total de filas recibidas hoy para esta fuente
+    source_files_today_df = daily_files_df[daily_files_df['source_id'] == source_id]
+    total_rows_today = source_files_today_df['rows'].sum()
+
+    try:
+        # Extraemos las estadísticas de la celda 'Row Statistics' o 'Total Rows Processed'
+        stats_col_name = next((col for col in day_stats.columns if 'Rows' in col), None)
+        if not stats_col_name:
+            return incidents
+        
+        stats_text = str(day_stats[stats_col_name].iloc[0])
+        
+        # Usamos regex para extraer los valores Min y Max esperados
+        min_rows_match = re.search(r'Min:\s*([\d,]+)', stats_text)
+        max_rows_match = re.search(r'Max:\s*([\d,]+)', stats_text)
+        
+        if min_rows_match and max_rows_match:
+            # Convertimos los números a un formato usable (quitando comas)
+            expected_min = int(min_rows_match.group(1).replace(',', ''))
+            expected_max = int(max_rows_match.group(1).replace(',', ''))
+
+            # 5. Comparamos el volumen de hoy con el rango esperado
+            if total_rows_today > expected_max or total_rows_today < expected_min:
+                description = (
+                    f"Variación de volumen inesperada. Se recibieron {total_rows_today:,} filas, "
+                    f"pero el rango esperado para un {day_of_week} es entre {expected_min:,} y {expected_max:,}."
+                )
+                incidents.append({
+                    "source_id": source_id,
+                    "incident_type": "Unexpected Volume Variation",
+                    "description": description,
+                    "severity": "REQUIERE ATENCIÓN",
+                    "date": date_str,
+                    "details": {
+                        "received_rows": int(total_rows_today),
+                        "expected_min": expected_min,
+                        "expected_max": expected_max
+                    }
+                })
+    except Exception as e:
+        print(f"--- ↳ ⚠️  ADVERTENCIA: No se pudo procesar la variación de volumen para {source_id}: {e} ---")
+
+    return incidents
+
+def find_late_uploads(
+    daily_files_df: pd.DataFrame,
+    cv_patterns: Dict[str, Any],
+    source_id: str,
+    date_str: str
+) -> List[Dict[str, Any]]:
+    """
+    (Lógica Pura - Esqueleto) Detecta archivos subidos significativamente fuera del horario esperado.
+    """
+    # Por ahora, esta función es un placeholder.
+    # En el futuro, aquí irá la lógica para comparar la hora de subida con la ventana esperada del CV.
+    incidents = []
+    return incidents
+
+def find_previous_period_uploads(
+    daily_files_df: pd.DataFrame,
+    cv_patterns: Dict[str, Any],
+    source_id: str,
+    date_str: str
+) -> List[Dict[str, Any]]:
+    """
+    (Lógica Pura - Esqueleto) Detecta archivos cuya fecha en el nombre no corresponde al período de carga esperado.
+    """
+    # Por ahora, esta función es un placeholder.
+    # En el futuro, aquí irá la lógica para extraer la fecha del filename y compararla con el 'Upload Lag Days Mode' del CV.
+    incidents = []
+    return incidents

@@ -26,6 +26,7 @@ __pycache__/
 Thumbs.db
 desktop.ini
 
+
 # Archivos de log
 # Los logs se generan en cada ejecución y no deben estar en el control de versiones.
 *.log
