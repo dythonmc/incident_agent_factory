@@ -1,29 +1,20 @@
 # incident_agent/tools/detectors.py
 
 import pandas as pd
+import re
 from typing import List, Dict, Any
 
-def find_missing_files(
-    daily_files_df: pd.DataFrame,
-    cv_data: Dict[str, pd.DataFrame],
-    source_id: str,
-    date_str: str
-) -> List[Dict[str, Any]]:
-    """
-    (Lógica Pura) Detecta si faltan archivos para una fuente de datos.
-    Toma DataFrames como entrada y devuelve una lista de incidencias.
-    """
+def find_missing_files(daily_files_df: pd.DataFrame, cv_patterns: Dict[str, Any], source_id: str, date_str: str) -> List[Dict[str, Any]]:
     incidents = []
     try:
         day_of_week = pd.to_datetime(date_str).day_name()
-        processing_stats = cv_data.get("file_processing_stats")
+        processing_stats = cv_patterns.get("file_processing_stats")
         if processing_stats is None or processing_stats.empty:
             return incidents
         
         processing_stats.columns = [str(col).lower() for col in processing_stats.columns]
         day_stats = processing_stats[processing_stats['day'].str.lower() == day_of_week.lower()]
-        if day_stats.empty:
-            return incidents
+        if day_stats.empty: return incidents
         
         expected_files_mean = day_stats['mean files'].iloc[0]
         actual_files_count = len(daily_files_df[daily_files_df['source_id'] == source_id])
@@ -41,45 +32,94 @@ def find_missing_files(
         print(f"Error en la lógica de 'find_missing_files' para {source_id}: {e}")
         return []
 
-def find_duplicated_or_failed_files(
+def find_duplicated_or_failed_files(daily_files_df: pd.DataFrame, historical_files_df: pd.DataFrame, source_id: str, date_str: str) -> List[Dict[str, Any]]:
+    incidents = []
+    reported_filenames = set()
+    source_files_df = daily_files_df[daily_files_df['source_id'] == source_id]
+    if source_files_df.empty: return incidents
+    source_files_df = source_files_df.copy()
+    source_files_df.loc[:, 'status'] = source_files_df['status'].astype(str).fillna('unknown')
+
+    duplicates_df = source_files_df[(source_files_df['is_duplicated'] == True) & (source_files_df['status'].str.lower() == 'stopped')]
+    for _, row in duplicates_df.iterrows():
+        filename = row['filename']
+        if filename not in reported_filenames:
+            incidents.append({"source_id": source_id, "incident_type": "Duplicated File (Flag)", "description": f"Archivo marcado como duplicado: '{filename}'.", "severity": "URGENT", "date": date_str})
+            reported_filenames.add(filename)
+
+    filename_counts = source_files_df['filename'].value_counts()
+    intraday_dup_names = filename_counts[filename_counts > 1].index.tolist()
+    if intraday_dup_names:
+        intraday_duplicates_df = source_files_df[source_files_df['filename'].isin(intraday_dup_names)]
+        for _, row in intraday_duplicates_df.iterrows():
+            filename = row['filename']
+            if filename not in reported_filenames:
+                incidents.append({"source_id": source_id, "incident_type": "Intraday Duplicate", "description": f"Archivo subido múltiples veces hoy: '{filename}'.", "severity": "REQUIERE ATENCIÓN", "date": date_str})
+                reported_filenames.add(filename)
+    
+    if not historical_files_df.empty:
+        historical_filenames = set(historical_files_df[historical_files_df['source_id'] == source_id]['filename'])
+        historical_duplicates_df = source_files_df[source_files_df['filename'].isin(historical_filenames)]
+        for _, row in historical_duplicates_df.iterrows():
+            filename = row['filename']
+            if filename not in reported_filenames:
+                incidents.append({"source_id": source_id, "incident_type": "Historical Duplicate", "description": f"Archivo duplicado de la semana anterior: '{filename}'.", "severity": "REQUIERE ATENCIÓN", "date": date_str})
+                reported_filenames.add(filename)
+
+    failed_files_df = source_files_df[(source_files_df['status'].str.lower() != 'processed') & (~source_files_df['filename'].isin(reported_filenames))]
+    for _, row in failed_files_df.iterrows():
+        incidents.append({"source_id": source_id, "incident_type": "Failed File", "description": f"Archivo con procesamiento fallido: '{row['filename']}' (Estado: {row['status']}).", "severity": "REQUIERE ATENCIÓN", "date": date_str})
+
+    return incidents
+
+def find_unexpected_empty_files(
     daily_files_df: pd.DataFrame,
+    cv_patterns: Dict[str, Any],
     source_id: str,
     date_str: str
 ) -> List[Dict[str, Any]]:
     """
-    (Lógica Pura) Detecta archivos duplicados o con estado de procesamiento fallido.
+    (Lógica Pura) Detecta archivos con cero filas que no son esperados según el CV.
     """
     incidents = []
-    source_files_df = daily_files_df[daily_files_df['source_id'] == source_id]
-    if source_files_df.empty:
-        return incidents
-
-    # Nos aseguramos de que la columna 'status' sea de tipo string y manejamos valores nulos (NaN)
-    source_files_df = source_files_df.copy()
-    source_files_df.loc[:, 'status'] = source_files_df['status'].astype(str).fillna('unknown')
-
-    # --- 1. Detección de Duplicados ---
-    duplicates_df = source_files_df[
-        (source_files_df['is_duplicated'] == True) & 
-        (source_files_df['status'].str.lower() == 'stopped')
-    ]
-    for _, row in duplicates_df.iterrows():
-        incidents.append({
-            "source_id": source_id, "incident_type": "Duplicated File",
-            "description": f"Archivo duplicado detectado: '{row['filename']}'.", "severity": "URGENT",
-            "date": date_str, "details": { "filename": row['filename'], "status": row['status'] }
-        })
-
-    # --- 2. Detección de Archivos Fallidos ---
-    failed_files_df = source_files_df[source_files_df['status'].str.lower() != 'processed']
-    if not duplicates_df.empty:
-        failed_files_df = failed_files_df[~failed_files_df.index.isin(duplicates_df.index)]
     
-    for _, row in failed_files_df.iterrows():
-        incidents.append({
-            "source_id": source_id, "incident_type": "Failed File",
-            "description": f"Archivo con procesamiento fallido: '{row['filename']}' (Estado: {row['status']}).", "severity": "REQUIERE ATENCIÓN",
-            "date": date_str, "details": { "filename": row['filename'], "status": row['status'], "status_message": row['status_message'] }
-        })
+    # 1. Encontrar todos los archivos vacíos de hoy para la fuente actual
+    source_files_df = daily_files_df[daily_files_df['source_id'] == source_id]
+    empty_files_today = source_files_df[source_files_df['rows'] == 0]
+    
+    if empty_files_today.empty:
+        return incidents # Si no hay archivos vacíos hoy, no hay nada que hacer
 
+    # 2. Consultar el CV para ver si los archivos vacíos son normales en este día
+    day_of_week = pd.to_datetime(date_str).day_name()
+    day_summary_table = cv_patterns.get("day_of_week_summary")
+    
+    are_empty_files_expected = False
+    if day_summary_table is not None and not day_summary_table.empty:
+        day_stats = day_summary_table[day_summary_table['Day'].str.lower() == day_of_week.lower()]
+        if not day_stats.empty:
+            # Buscamos en las columnas 'Empty Files' o 'Empty Files Analysis'
+            empty_files_col_name = next((col for col in day_stats.columns if 'Empty Files' in col), None)
+            
+            if empty_files_col_name:
+                # Extraemos el valor de la celda, que puede ser un string como "• Min: 0<br>• Max: 1<br>..."
+                stats_text = str(day_stats[empty_files_col_name].iloc[0])
+                # Si el máximo de archivos vacíos esperado es mayor que 0, entonces son esperados.
+                max_empty_match = re.search(r'Max:\s*([\d\.]+)', stats_text)
+                if max_empty_match and float(max_empty_match.group(1)) > 0:
+                    are_empty_files_expected = True
+
+    # 3. Si encontramos archivos vacíos y el CV NO los esperaba, creamos la incidencia
+    if not are_empty_files_expected:
+        for _, row in empty_files_today.iterrows():
+            incidents.append({
+                "source_id": source_id,
+                "incident_type": "Unexpected Empty File",
+                "description": f"Archivo vacío inesperado: '{row['filename']}'. El CV indica que no deberían llegar archivos sin registros los {day_of_week}.",
+                "severity": "REQUIERE ATENCIÓN",
+                "date": date_str,
+                "details": {"filename": row['filename']}
+            })
+            
     return incidents
+

@@ -2,70 +2,27 @@
 
 from google.adk.agents import Agent
 from .tools import orchestrator_tools
-from google.adk.agents.callback_context import CallbackContext
-from google.adk.models.llm_response import LlmResponse
-from typing import Optional
 
-# --- CONTADOR DE TOKENS ---
-class TokenCounter:
-    def __init__(self):
-        self.total_prompt_tokens = 0
-        self.total_candidates_tokens = 0
-
-    def add(self, prompt_tokens: int, candidates_tokens: int):
-        self.total_prompt_tokens += prompt_tokens
-        self.total_candidates_tokens += candidates_tokens
-        print(f"--- 🪙 Contador de Tokens: Entrada={prompt_tokens}, Salida={candidates_tokens}. Total acumulado: {self.total_prompt_tokens + self.total_candidates_tokens} ---")
-
-token_counter = TokenCounter()
-
-# --- CALLBACK PARA LOGUEAR EL USO DE TOKENS ---
-def log_token_usage(callback_context: CallbackContext, llm_response: LlmResponse) -> Optional[LlmResponse]:
-    if llm_response and llm_response.usage_metadata:
-        prompt_tokens = llm_response.usage_metadata.prompt_token_count or 0
-        candidates_tokens = llm_response.usage_metadata.candidates_token_count or 0
-        token_counter.add(prompt_tokens, candidates_tokens)
-    return llm_response
-
-# --- DEFINICIÓN DEL EQUIPO DE SUBAGENTES ESPECIALISTAS ---
-RecolectorAgent = Agent(
-    name="RecolectorAgent", model="gemini-2.5-flash",
-    instruction="Tu única tarea es recolectar información. Usa la herramienta `recolectar_informacion_tool`.",
-    tools=[orchestrator_tools.recolectar_informacion_tool],
-    after_model_callback=log_token_usage
-)
-
-DetectorAgent = Agent(
-    name="DetectorAgent", model="gemini-2.5-flash",
-    instruction="Tu única tarea es ejecutar el ciclo de detección de incidencias usando la herramienta `ejecutar_ciclo_deteccion_tool`.",
-    tools=[orchestrator_tools.ejecutar_ciclo_deteccion_tool],
-    after_model_callback=log_token_usage
-)
-
-RedactorAgent = Agent(
-    name="RedactorAgent", model="gemini-2.5-flash",
-    instruction="Tu única tarea es generar el reporte final estructurado usando la herramienta `generar_reporte_final_tool`.",
-    tools=[orchestrator_tools.generar_reporte_final_tool],
-    after_model_callback=log_token_usage
-)
-
-# --- DEFINICIÓN DEL AGENTE RAÍZ ---
-SequentialAgent = Agent(
-    name="SequentialAgent", model="gemini-2.5-flash",
+# --- Agente de Análisis (con instrucción ultra-estricta) ---
+IncidentAnalysisAgent = Agent(
+    name="IncidentAnalysisAgent",
+    model="gemini-2.5-flash", 
+    
     instruction=(
-        "Eres el Director de un proyecto de análisis. Ejecuta a tus especialistas en la siguiente secuencia estricta, sin detenerte: "
-        "1. Delega al `RecolectorAgent`. "
-        "2. Delega al `DetectorAgent`. "
-        "3. Delega al `RedactorAgent`. "
-        "Tu trabajo solo termina cuando el `RedactorAgent` ha completado su tarea. "
-        "Tu respuesta final debe ser el mensaje de éxito que te entregue el `RedactorAgent`."
+        "Eres un sistema automatizado. Tu única función es invocar la herramienta `run_full_analysis` "
+        "y devolver su resultado. NO eres un asistente de chat. NO debes añadir texto introductorio, "
+        "resúmenes o explicaciones. Tu respuesta DEBE ser EXCLUSIVAMENTE el resultado directo de la herramienta."
+        "\n"
+        "**FORMATO DE SALIDA OBLIGATORIO:**"
+        "Tu única y exclusiva salida debe ser un string que represente una lista de diccionarios de Python, "
+        "tal como lo devuelve la herramienta. Ejemplo: `[{'source_id': '123', ...}, {'source_id': '456', ...}]`."
+        "Si la herramienta devuelve una lista vacía, tu salida debe ser exactamente `[]`."
+        "NO ENVUELVAS LA RESPUESTA EN MARKDOWN, JSON o CUALQUIER OTRA COSA."
     ),
-    sub_agents=[
-        RecolectorAgent,
-        DetectorAgent,
-        RedactorAgent,
-    ],
-    after_model_callback=log_token_usage
+    
+    tools=[
+        orchestrator_tools.run_full_analysis,
+    ]
 )
 
-root_agent = SequentialAgent
+root_agent = IncidentAnalysisAgent
