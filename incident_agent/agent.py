@@ -6,7 +6,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_response import LlmResponse
 from typing import Optional
 
-# --- CONTADOR DE TOKENS (Singleton) ---
+# --- CONTADOR DE TOKENS ---
 class TokenCounter:
     def __init__(self):
         self.total_prompt_tokens = 0
@@ -19,18 +19,13 @@ class TokenCounter:
 
 token_counter = TokenCounter()
 
-# --- CALLBACK PARA LOGUEAR EL USO DE TOKENS (CORREGIDO) ---
+# --- CALLBACK PARA LOGUEAR EL USO DE TOKENS ---
 def log_token_usage(callback_context: CallbackContext, llm_response: LlmResponse) -> Optional[LlmResponse]:
-    """
-    Este callback se ejecuta después de cada llamada al LLM y actualiza nuestro contador global.
-    Los nombres de los parámetros DEBEN ser 'callback_context' y 'llm_response'.
-    """
     if llm_response and llm_response.usage_metadata:
         prompt_tokens = llm_response.usage_metadata.prompt_token_count or 0
         candidates_tokens = llm_response.usage_metadata.candidates_token_count or 0
         token_counter.add(prompt_tokens, candidates_tokens)
     return llm_response
-
 
 # --- DEFINICIÓN DEL EQUIPO DE SUBAGENTES ESPECIALISTAS ---
 RecolectorAgent = Agent(
