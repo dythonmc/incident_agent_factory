@@ -1,0 +1,39 @@
+# Entorno Virtual de Python
+# La carpeta más importante a ignorar. Es específica de cada máquina.
+.venv/
+venv/
+*.pyenv
+
+# Archivos de Secretos y Variables de Entorno
+# ¡CRÍTICO! Nunca subas tu archivo .env con tus claves de API.
+.env
+
+# Archivos autogenerados por Python
+# Cache de bytecode compilado. Se genera automáticamente al correr el código.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de configuración del editor (Visual Studio Code)
+# Guarda configuraciones personales de tu editor que no son relevantes para otros.
+.vscode/
+
+# Archivos de Sistema Operativo
+# Basura generada por Windows, macOS y Linux.
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos de log
+# Los logs se generan en cada ejecución y no deben estar en el control de versiones.
+*.log
+logs/
+
+# Artefactos de testing y builds
+# Carpetas y archivos generados por herramientas de testing o empaquetado.
+.pytest_cache/
+.coverage
+build/
+dist/
+*.egg-info/
