@@ -6,6 +6,7 @@ venv/
 
 # Archivos de Secretos y Variables de Entorno
 # ¡CRÍTICO! Nunca subas tu archivo .env con tus claves de API.
+
 .env
 
 # Archivos autogenerados por Python
